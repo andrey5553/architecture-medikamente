@@ -1,0 +1,27 @@
+@startuml
+allowmixing
+skinparam componentStyle rectangle
+
+actor "Лаборатория" as Lab
+actor "Администратор" as Administrator
+entity "Файловый сервер" as Server {
+    [RegistryByDate.xlsx]
+    [Data file - Пациент.pdf]
+    [Результаты_анализов.jpg]
+}
+
+rectangle "DFD 2: Учёт лабораторных результатов" {
+    Lab --> Administrator : Передаёт бумажные результаты
+    Administrator --> Server : Вводит в Excel, сохраняет сканы
+}
+
+note right of Administrator
+  Ручной ввод в реестр
+  Копирование в папку пациента
+end note
+
+note right of Server
+  Данные дублируются
+  Нет версионирования
+end note
+@enduml
