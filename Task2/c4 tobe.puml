@@ -1,0 +1,137 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+' Описание границ (System Boundaries)
+System_Boundary(medicament, "МЕДИКАМЕНТЕ [Архитектура]") {
+    System_Boundary(medicine, "Медицина [Домен]") {
+        
+        Person(patient, "Patient", "Пациент")
+        Person(doctor, "Doctor", "Специалист-медик")
+        
+        Container(portal, "Портал", "Java", "")
+        Container(mobile_app, "Мобильное приложение", "Java", "")
+        
+        System_Ext(laboratory, "Laboratory", "Медицинская лаборатория")
+        Container(laboratory_adapter, "Laboratory API Adapter", "Java", "Интеграция с системой лаборатории")
+        Container(file_storage, "Файловое хранилище", "minio", "Хранение файлов о пациентах.\nШифрование на стороне сервера (SSE-S3).")
+        Container(patients_data, "Данные пациентов", "PostgresQL", "Оперативные знания об обезличенных\nпациентах: приёмы, метаданные результатов анализов,\nсводка для врача")
+        
+        Container(api_gateway, "API Gateway", "NGINX", "")
+        Container(bff_medical, "BFF: специалисты", "Java", "[RBAC check]")
+        Container(bff_patient, "BFF: пациенты", "Java", "[RBAC check]")
+        Container(record_service, "Сервис записей", "Java", "Запись пациента, уведомления\nдля специалиста, оперативные данные\nдля обоих")
+        Container(analysis_service, "Сервис анализов", "Java", "")
+        
+        Container(redis, "Redis", "container", "Хранит JWT")
+        Container(auth_service, "Сервис аутентификации", "Java", "")
+        Container(ldap, "LDAP сервер", "Software System", "Данные сотрудников и пациентов")
+        Container(keycloak, "Keycloak", "Software System", "")
+        Container(vault, "Key Management Service", "Hashicorp Vault", "Управление секретами и ключами")
+    }
+
+    System_Boundary(accounting, "Бухгалтерия [Домен]") {
+        Person(admin, "Administrator", "Сотрудник ресепшена")
+        Person(cassier, "Cassier", "Кассир")
+        Person(bookkeeper, "Bookkeeper", "Бухгалтер")
+        System_Ext(payment_gateway, "Payment Gateway", "Сторонний платёжный шлюз")
+        Container(kkm, "ККМ", "Software System", "Контрольно-кассовая машина")
+        Container(container_1c_accounting, "1C Бухгалтерия предприятия", "Software System", "Бухгалтерская система учёта")
+        Container(client_storage, "Хранилище клиентов", "PostgresQL", "")
+    }
+
+    System_Boundary(storage, "Склад [Домен]") {
+        Person(warehouse_keeper, "Warehouse keeper", "Сотрудник склада")
+        Container(container_1c_warehouse, "1C Торговля и склад", "Software System", "Складская система учёта")
+        Container(db_1c_warehouse, "Хранилище 1C Торговля и склад", "PostgreSQL", "База данных 1С Торговля и склад")
+        Container(inventory_storage, "Хранилище инвентаря", "PostgresQL", "")
+    }
+
+    System_Boundary(analytics, "Аналитика [Домен]") {
+        Person(analyst, "BI Analytic", "BI Аналитик данных")
+        Container(data_flow, "Data flow management", "Apach Nifi", "Управление потоками данных и ETL процессами")
+        Container(anonymizer, "Anonimizer", "Microsoft Presidio", "Детектор и анонимизатор персональной информации")
+        Container(colibra, "Collibra", "container", "")
+        
+        Container(audit_storage, "Аудит действий персонала", "PostgresQL", "Хранит действия сотрудников.\nТакие как: доступ к мед.книжке или\nрезультатам анализов пациента,\nзапись в мед книжке")
+        Container(analytics_storage, "Хранилище аналитических данных", "ClickHouse", "Инвентарь, персонал, пациенты, записи, анализы")
+        
+        Container(airflow, "Airflow", "container", "Отчёты, созданные по скриптам аналитика")
+        Container(debezium, "Debezium", "container", "")
+        Container(kafka, "Kafka", "container", "")
+        
+        System_Ext(exchange, "Exchange Mail Server", "Почтовый сервис внутренней почты")
+    }
+}
+
+' === Связи (Rel) ===
+
+' Медицина
+Rel(patient, portal, "Использует", "TLS 1.3")
+Rel(patient, mobile_app, "Использует", "TLS 1.3")
+Rel(doctor, portal, "Использует", "TLS 1.3")
+
+Rel(patient, admin, "Личное обращение")
+
+Rel(portal, api_gateway, "", "TLS 1.3")
+Rel(mobile_app, api_gateway, "", "TLS 1.3")
+Rel(exchange, portal, "", "TLS 1.3")
+
+Rel(api_gateway, bff_medical, "")
+Rel(api_gateway, bff_patient, "")
+Rel(api_gateway, auth_service, "", "TLS 1.3")
+
+Rel(bff_medical, record_service, "")
+Rel(bff_patient, record_service, "")
+Rel(bff_medical, analysis_service, "")
+Rel(bff_patient, file_storage, "")
+Rel(bff_patient, client_storage, "")
+
+Rel(record_service, patients_data, "")
+Rel(analysis_service, laboratory_adapter, "")
+Rel(analysis_service, patients_data, "")
+
+Rel(laboratory_adapter, laboratory, "")
+Rel(laboratory_adapter, file_storage, "")
+Rel(laboratory_adapter, vault, "GET /transit/keys/minio-sse")
+
+Rel(bff_patient, vault, "GET /transit/keys/pii-encryption", "", "#PII encrypted")
+
+Rel(record_service, vault, "GET /transit/keys/pii-encryption", "", "#PII encrypted")
+
+Rel(auth_service, keycloak, "", "TLS 1.3")
+Rel(auth_service, redis, "", "TLS 1.3")
+Rel(auth_service, ldap, "", "TLS 1.3")
+Rel(auth_service, vault, "")
+
+' Бухгалтерия
+Rel(admin, portal, "")
+Rel(cassier, kkm, "")
+Rel(bookkeeper, container_1c_accounting, "")
+
+Rel(kkm, payment_gateway, "")
+Rel(payment_gateway, container_1c_accounting, "")
+
+' Склад
+Rel(warehouse_keeper, container_1c_warehouse, "Учет ТМЦ")
+Rel(container_1c_warehouse, db_1c_warehouse, "")
+
+' Аналитика и связи между контейнерами
+Rel(analyst, analytics_storage, "")
+Rel(analyst, airflow, "")
+
+Rel(debezium, inventory_storage, "")
+Rel(debezium, db_1c_warehouse, "")
+Rel(debezium, kafka, "")
+
+Rel(data_flow, kafka, "")
+Rel(data_flow, analytics_storage, "")
+Rel(data_flow, audit_storage, "")
+Rel(data_flow, anonymizer, "")
+Rel(data_flow, colibra, "")
+Rel(airflow, analytics_storage, "")
+Rel(airflow, colibra, "")
+Rel(colibra, data_flow, "")
+
+@enduml
